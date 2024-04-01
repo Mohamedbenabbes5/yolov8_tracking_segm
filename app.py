@@ -1,48 +1,26 @@
+from flask import Flask, request, jsonify
+import requests
 from pathlib import Path
 from ultralytics import YOLO
-
+import numpy as np
 import cv2,os
 from ultralytics.utils.plotting import Annotator
 
-image_path=r"C:\Users\abbes\runs\segment\predict8\422473027_24696990526615866_5921879875950736426_n_frames\121.jpg"
+
+app = Flask(__name__)
+
+image_path=r"C:\Users\abbes\Desktop\369ef49e63f6bc41bc87ad55eb8d479b.jpg"
 images_path=r"C:\Users\abbes\Videos\frames"
 video_path=r"C:\Users\abbes\Videos\420712458_25329549856659200_6434361571323618539_n.mp4"
 
 output_path = r"C:\Users\abbes\Videos\frames"
-image_croped_path=r"C:\Users\abbes\Videos\frames\crop3"
-model=YOLO("best.pt")
+image_croped_path=r"C:\Users\abbes\Videos\frames\crop"
 
-
-
-
-
-def save_damage_data(damage_data,domageID,cropped_damage_image,damage_image,frame_number, current_damage_class_id,indice_classe, noms_classe,boxes,confidences):
-    # Implement data saving logic with error handling, timestamping, etc.
-    # Example using a dictionary:
-
-    damage_info = {
-           "domageID":domageID,
-            
-            "current_damage_class_id": current_damage_class_id,
-            "cropped_damage_image":cropped_damage_image,
-            "damage_image":damage_image,
-            "frame_number":frame_number,
-            "indice_classe": indice_classe,
-            "confidences":confidences,
-            "noms_classe": noms_classe,
-            "boxes": boxes,
-        }
-   
-    damage_data.append(damage_info)
-    # ... (save damage_data using your preferred method)
-
-
-
-def processVideo(video_path):
-
+def processVideo(video_path,model):
     # model.predict(video_path,save=True,show=True)
     # Ouvrez la vidéo pour la lecture
-   
+    cap = cv2.VideoCapture(video_path)
+
     # Obtenir la largeur et la hauteur de la vidéo
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -59,7 +37,6 @@ def processVideo(video_path):
     # read frames
     noms_classes =  {0: 'crack', 1: 'spall'}
     damage_data = []  
-    cap = cv2.VideoCapture(video_path)
     while ret:
         ret, frame = cap.read()
         
@@ -68,7 +45,7 @@ def processVideo(video_path):
             new_id_assigned = False
             # detect damages
             # track damages
-            results = model.track(source=frame, persist=True, conf=0.5, iou=iou, device="cpu",retina_masks=True,max_det=max_det,save_conf=True, imgsz=(420,420))
+            results = model.track(source=frame, persist=True, conf=0.5, iou=iou, device="cpu",retina_masks=True,max_det=max_det,save_conf=True)
             #print(results[0])
             
             test_visualis = results[0].plot()
@@ -143,9 +120,19 @@ def processVideo(video_path):
                             # annotator.count_labels(counts=nbr_damage, count_txt_size=2, color=(255, 255, 255), txt_color=(0, 0, 0))
                             
                             cropped_damage_image = frame[y_min:y_max, x_min:x_max]                        
-                            save_damage_data(damage_data,nbr_damage,cropped_damage_image,frame_,frame_number,current_damage_class_id,classe_indice,noms_classe,boxes,confidences)
                 
-
+                            damage_info = {
+                                "domageID": nbr_damage,
+                                "current_damage_class_id": current_damage_class_id,
+                                "cropped_damage_image": cropped_damage_image,
+                                "damage_image":frame_,
+                                "frame_number": frame_number,
+                                "indice_classe": classe_indice,
+                                "confidences": confidences,
+                                "noms_classe": noms_classe,
+                                "boxes": boxes
+                            }
+                            damage_data.append(damage_info)
                     num_id=max_nbr_id  
                 
 
@@ -155,4 +142,15 @@ def processVideo(video_path):
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break       
     print(damage_data) 
-processVideo(video_path)
+
+
+def processImage(image_path,model):
+    result=model(image_path, conf=0.4)
+    numpyImage=result[0].plot()# plot a BGR numpy array of predictions
+    return(numpyImage)
+
+        
+
+    
+#processVideo(video_path,YOLO("best.pt"))
+processImage(image_path,YOLO("best.pt"))
