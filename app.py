@@ -141,7 +141,7 @@ def processVideo(video_path,model):
             
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break       
-    print(damage_data) 
+    return(damage_data) 
 
 
 def processImage(image_path,model):
