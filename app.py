@@ -6,8 +6,7 @@ from ultralytics import YOLO
 import numpy as np
 import cv2,os
 from ultralytics.utils.plotting import Annotator
-import json
-import gc
+
 import uuid
 import time
 
@@ -17,25 +16,27 @@ app = Flask(__name__)
 shared = r"C:\Users\abbes\Documents\developpement\BackEndProjectPFE\shared"
 
 damages_images_path =os.path.join(shared,'result') 
-
 cropped_damages_images_path=os.path.join(shared,'result','cropped_images') 
+inspectionImages_path = os.path.join(shared, 'uploads', 'inspectionImages')
+inspectionVideos_path = os.path.join(shared, 'uploads', 'inspectionVideos')
 
-model=YOLO("best.pt")
+model=YOLO("best.pt",verbose=False)
 
-noms_classes =  {0: 'crack', 1: 'spall'}
+dammageLists =  {0: 'crack', 1: 'spall'}
 
 class DamageInfo:
-    def __init__(self, tracking_id_in_video=None,sources=None ,current_damage_class_id=None, damage_image=None, cropped_damage_image=None,  frame_number=None, confidences=None, noms_classe=None, bboxe=None,mask=None):
+    def __init__(self,  resourceId=None , tracking_id_in_video=None, DetectResultImage=None, croppedDamageImage=None,  videoFrameNumber=None, confidence=None, type=None, bboxe=None,mask=None):
+        self.resourceId = resourceId  
         self.tracking_id_in_video = tracking_id_in_video
-        self.sources = sources
-        self.current_damage_class_id = current_damage_class_id
+        
+   
 
-        self.damage_image = damage_image
-        self.cropped_damage_image = cropped_damage_image
+        self.DetectResultImage = DetectResultImage
+        self.croppedDamageImage = croppedDamageImage
 
-        self.frame_number = frame_number
-        self.confidences = confidences
-        self.noms_classe = noms_classe
+        self.videoFrameNumber = videoFrameNumber
+        self.confidence = confidence
+        self.type = type
         self.bboxes = bboxe
         self.mask = mask
     
@@ -51,17 +52,18 @@ def process_media():
                # Vérifier si la requête contient des données JSON
         if request.is_json:
             data_request = request.json.get('media_list')
+            print(data_request)
             # Vérifier si la requête contient des clés
             if data_request is not None and len(data_request) > 0:
-                for key, file_name in data_request.items():  # Boucler à travers chaque élément de la liste
+                for resourceId, file_name in data_request.items():  # Boucler à travers chaque élément de la liste
                     file_extension = os.path.splitext(file_name)[1].lower()
-
-                    if file_extension in ('.jpg', '.jpeg', '.png', '.gif'): 
-                        processImage(file_name)
+                    print(id, file_name)
+                    if file_extension in ('.jpg', '.jpeg', '.png', '.gif','.webp'): 
+                        processImage(file_name,resourceId)
                     elif file_extension in ('.mp4', '.avi', '.mov', '.mkv'):
-                        processVideo(file_name)
+                        processVideo(file_name,resourceId)
                     else:
-                        return jsonify({'error_message': 'Type de fichier non pris en charge'}), 404      
+                        return jsonify({'error': 'Type de fichier non pris en charge'}), 404      
                 # Vous pouvez retourner une réponse appropriée une fois que tous les médias ont été traités
                 # return jsonify({"message": "Le traitement des médias a été effectué avec succès."}), 200
                 return jsonify(data_results), 200
@@ -81,7 +83,7 @@ def process_media():
     
 
 # @app.route('/process_video', methods=['POST'])
-def processVideo(video_name):
+def processVideo(video_name,resourceId):
     try:
         # data_results={}
         global data_results
@@ -92,7 +94,7 @@ def processVideo(video_name):
         print(video_name)
 
         # Chemin complet de la vidéo
-        video_path = os.path.join(shared, 'public', 'uploads', 'videos', video_name)
+        video_path = os.path.join(inspectionVideos_path,  video_name)
         if not os.path.exists(video_path):
         # Si le fichier n'existe pas, renvoyer une réponse avec un code d'état 404 et un message d'erreur
            return jsonify({'error_message': 'video not found on the server'}), 404
@@ -108,7 +110,7 @@ def processVideo(video_name):
 
         class_ids=None
         ret = True
-        frame_number=0
+        videoFrameNumber=0
         max_det=10
         iou=0.5
         tracking_id_in_video=0
@@ -121,11 +123,11 @@ def processVideo(video_name):
             ret, frame = cap.read()
             
             if ret:
-                frame_number+=1
+                videoFrameNumber+=1
                 new_id_assigned = False
                 # detect damages
                 # track damages
-                results = model.track(source=frame, persist=True, conf=0.5, iou=iou, device="cpu",retina_masks=True,max_det=max_det,save_conf=True)
+                results = model.track(source=frame, persist=True, conf=0.5, iou=0.7, device="cpu",retina_masks=True,max_det=max_det,save_conf=True)
                 #print(results[0])
                 
                 test_visualis = results[0].plot()
@@ -156,23 +158,23 @@ def processVideo(video_name):
                                 tracking_id_in_video+=1
                                 current_damage_class_id=0
                                 boxes=results[0].boxes.xyxy[indice].tolist() 
-                                confidences = float(results[0].boxes.conf[indice].item())
+                                confidence =  round(float(results[0].boxes.conf[indice].item()), 2) 
                                 mask=results[0].masks.xy[indice].tolist()   
                                 print(mask)
                                 classe_indice=int(results[0].boxes.cls[indice].item())                        
-                                noms_classe=noms_classes[classe_indice]
+                                type=dammageLists[classe_indice]
 
                                 if classe_indice==0:
                                     nb_crack+=1   
                                     current_damage_class_id= nb_crack                    
-                                    etiquette=f"Crack {int(confidences*100)}%"
-                                    print(f"new {noms_classe} detected: {noms_classe} num {nb_crack}")
+                                    etiquette=f"Crack {int(confidence*100)}%"
+                                    print(f"new {type} detected: {type} num {nb_crack}")
 
                                 else:
                                     nb_spall+=1
                                     current_damage_class_id= nb_spall
-                                    etiquette=f"Spall {int(confidences*100)}%"
-                                    print(f"new {noms_classe} detected: {noms_classe} num {nb_spall}")
+                                    etiquette=f"Spall {int(confidence*100)}%"
+                                    print(f"new {type} detected: {type} num {nb_spall}")
 
                                 x1, y1, x2, y2 =  results[0].boxes.xyxy[indice].cpu().int().tolist()
                             # Marge à ajouter autour des boîtes englobantes (en pixels)
@@ -197,25 +199,25 @@ def processVideo(video_name):
                                 annotator.box_label(boxes, label=etiquette, color=(0, 0,255), txt_color=(255, 255, 255), rotated=False)
                                 # annotator.count_labels(counts=tracking_id_in_video, count_txt_size=2, color=(255, 255, 255), txt_color=(0, 0, 0))
                                 
-                                cropped_damage_image = frame[y_min:y_max, x_min:x_max]                        
+                                croppedDamageImage = frame[y_min:y_max, x_min:x_max]                        
                     
                                 frame_title = f"{int(time.time())}_{str(uuid.uuid4())[:8]}.jpg"
                             
                                 cv2.imwrite(os.path.join(damages_images_path, frame_title), frame_) 
                                 
                                 crop_title=f"{int(time.time())}_{str(uuid.uuid4())[:8]}.jpg"
-                                cv2.imwrite(os.path.join(cropped_damages_images_path, crop_title), cropped_damage_image)
+                                cv2.imwrite(os.path.join(cropped_damages_images_path, crop_title), croppedDamageImage)
                                 new_damage_info = DamageInfo(
-                                    tracking_id_in_video,
-                                    video_name,      
-                                    current_damage_class_id,
+                                    resourceId,
+                                    tracking_id_in_video,  
+                   
                                     frame_title,
                                     crop_title,
                                     
-                                    frame_number,                        
+                                    videoFrameNumber,                        
                                 
-                                    confidences,
-                                    noms_classe,
+                                    confidence,
+                                    type,
                                     boxes,  
                                     mask                   
                                         )
@@ -238,7 +240,7 @@ def processVideo(video_name):
         app.logger.error(f"Error processing video: {e}")
         return jsonify({'error_message': 'An error occurred while processing the video'}), 500
    
-def processImage(image_name):
+def processImage(image_name,resourceId):
     try:    
         global data_results
         global nbr_damage
@@ -246,7 +248,7 @@ def processImage(image_name):
         print(image_name)
         print("nbr damages init",nbr_damage)
         # Chemin complet de image
-        image_path = os.path.join(shared, 'public', 'uploads', 'images', image_name)
+        image_path = os.path.join(inspectionImages_path,image_name)
         if not os.path.exists(image_path):
             # Si le fichier n'existe pas, renvoyer une réponse avec un code d'état 404 et un message d'erreur
             return jsonify({'error_message': 'Image not found on the server'}), 404
@@ -265,15 +267,15 @@ def processImage(image_name):
                 classe_indice=int(data.cls.item())   
                 bboxe=data.xyxy[0].cpu().tolist()       
     
-                confidences = float(data.conf.item())
+                confidence = round (float(data.conf.item()),2)
                 mask=result.masks.xy[0].tolist()   
 
                 new_damage_info = DamageInfo(
-                    sources=image_name,
-                    damage_image=image_name,
-                    cropped_damage_image=crop_title,
-                    confidences=confidences,
-                    noms_classe=noms_classes[classe_indice],
+                    resourceId=resourceId,
+                    DetectResultImage=image_name,
+                    croppedDamageImage=crop_title+".jpg",
+                    confidence=confidence,
+                    type=dammageLists[classe_indice],
                     bboxe=bboxe,
                     mask=mask
                                             )     
